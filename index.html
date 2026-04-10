@@ -304,16 +304,31 @@
     }
 
     // === Piece ===
+    // 7-bag randomizer (standard Tetris rule)
+    let pieceBag = [];
+    function nextPieceName() {
+        if (pieceBag.length === 0) {
+            pieceBag = [...PIECE_NAMES];
+            for (let i = pieceBag.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [pieceBag[i], pieceBag[j]] = [pieceBag[j], pieceBag[i]];
+            }
+        }
+        return pieceBag.pop();
+    }
+
     function randomPiece() {
-        const name = PIECE_NAMES[Math.floor(Math.random() * PIECE_NAMES.length)];
+        const name = nextPieceName();
         const shapes = SHAPES[name];
+        // I piece starts at y=-1 so visible row is at row 0
+        const startY = name === 'I' ? -1 : 0;
         return {
             name,
             shapes,
             rotation: 0,
             shape: shapes[0],
             x: Math.floor((COLS - shapes[0][0].length) / 2),
-            y: 0,
+            y: startY,
             color: COLORS[shapes[0].flat().find(v => v > 0)],
         };
     }
@@ -363,7 +378,7 @@
 
     // === Movement ===
     function moveLeft() {
-        if (!currentPiece || gameOver || !gameStarted) return;
+        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0) return;
         if (!collides(currentPiece, currentPiece.x - 1, currentPiece.y)) {
             currentPiece.x--;
             lockDelay = 0;
@@ -371,7 +386,7 @@
         }
     }
     function moveRight() {
-        if (!currentPiece || gameOver || !gameStarted) return;
+        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0) return;
         if (!collides(currentPiece, currentPiece.x + 1, currentPiece.y)) {
             currentPiece.x++;
             lockDelay = 0;
@@ -379,7 +394,7 @@
         }
     }
     function moveDown() {
-        if (!currentPiece || gameOver || !gameStarted) return;
+        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0) return;
         if (!collides(currentPiece, currentPiece.x, currentPiece.y + 1)) {
             currentPiece.y++;
             score += 1;
@@ -388,7 +403,7 @@
         return false;
     }
     function hardDrop() {
-        if (!currentPiece || gameOver || !gameStarted) return;
+        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0) return;
         let dropped = 0;
         while (!collides(currentPiece, currentPiece.x, currentPiece.y + 1)) {
             currentPiece.y++;
@@ -399,7 +414,8 @@
     }
 
     function rotate() {
-        if (!currentPiece || gameOver || !gameStarted) return;
+        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0) return;
+        if (currentPiece.name === 'O') return; // O piece doesn't rotate
         const newRot = (currentPiece.rotation + 1) % currentPiece.shapes.length;
         const oldShape = currentPiece.shape;
         currentPiece.shape = currentPiece.shapes[newRot];
@@ -619,16 +635,27 @@
             animTimer -= dt;
         }
 
-        if (!gameOver) {
+        if (!gameOver && animatingRows.length === 0) {
             // Auto drop
             lastDrop += dt;
             if (lastDrop >= dropInterval) {
                 lastDrop = 0;
                 if (!moveDown()) {
-                    lockDelay += dropInterval;
+                    // Piece can't move down — accumulate lock delay
+                    lockDelay += dt;
                     if (lockDelay >= lockLimit) {
                         placePiece();
                     }
+                } else {
+                    lockDelay = 0;
+                }
+            }
+
+            // Also check lock on every frame if piece is grounded
+            if (currentPiece && collides(currentPiece, currentPiece.x, currentPiece.y + 1)) {
+                lockDelay += dt;
+                if (lockDelay >= lockLimit) {
+                    placePiece();
                 }
             }
         }
@@ -675,6 +702,7 @@
         lockDelay = 0;
         animatingRows = [];
         animTimer = 0;
+        pieceBag = [];
         nextPiece = null;
         spawnPiece();
         updateUI();
