@@ -403,6 +403,18 @@
         currentPiece = nextPiece || randomPiece();
         nextPiece = randomPiece();
         lockDelay = 0;
+
+        // If gold flag is set, convert this piece to gold
+        if (nextIsGold) {
+            nextIsGold = false;
+            currentPiece.isGold = true;
+            // Replace color values in shape with GOLD
+            currentPiece.shape = currentPiece.shape.map(row => row.map(v => v > 0 ? GOLD : 0));
+            currentPiece.shapes = currentPiece.shapes.map(s => s.map(row => row.map(v => v > 0 ? GOLD : 0)));
+            // Track which columns this piece will occupy
+            goldCols = [];
+        }
+
         // Check game over
         if (collides(currentPiece, currentPiece.x, currentPiece.y)) {
             gameOver = true;
@@ -427,6 +439,7 @@
 
     function placePiece() {
         const s = currentPiece.shape;
+        const wasGold = currentPiece.isGold;
         for (let r = 0; r < s.length; r++) {
             for (let c = 0; c < s[r].length; c++) {
                 if (s[r][c] === 0) continue;
@@ -434,15 +447,16 @@
                 const bx = currentPiece.x + c;
                 if (by >= 0 && by < ROWS && bx >= 0 && bx < COLS) {
                     board[by][bx] = s[r][c];
+                    if (wasGold && !goldCols.includes(bx)) goldCols.push(bx);
                 }
             }
         }
         playDrop();
         clearLines();
 
-        // Maybe spawn gold block
-        goldSpawnCounter++;
-        if (goldSpawnCounter >= 12 + Math.floor(Math.random() * 8) && !quizActive) {
+        // Maybe spawn gold block (only if no gold currently on board)
+        if (!wasGold) goldSpawnCounter++;
+        if (goldSpawnCounter >= 12 + Math.floor(Math.random() * 8) && !quizActive && !boardHasGold()) {
             goldSpawnCounter = 0;
             spawnGoldPiece();
         }
@@ -465,36 +479,12 @@
         return false;
     }
 
+    let nextIsGold = false; // flag: next spawned piece should be gold
+
     function spawnGoldPiece() {
-        // Place a random gold shape (2-4 blocks) near the top
-        const shapes = [
-            [[GOLD, GOLD]], // horizontal 2
-            [[GOLD],[GOLD]], // vertical 2
-            [[GOLD, GOLD],[GOLD, 0]], // L shape
-            [[GOLD, GOLD],[0, GOLD]], // reverse L
-        ];
-        const shape = shapes[Math.floor(Math.random() * shapes.length)];
-        const sx = Math.floor(Math.random() * (COLS - shape[0].length));
-
-        // Find lowest valid Y
-        let sy = 0;
-        goldCols = [];
-        for (let r = 0; r < shape.length; r++) {
-            for (let c = 0; c < shape[r].length; c++) {
-                if (shape[r][c] === GOLD) goldCols.push(sx + c);
-            }
-        }
-        goldCols = [...new Set(goldCols)];
-
-        // Place on board at top
-        for (let r = 0; r < shape.length; r++) {
-            for (let c = 0; c < shape[r].length; c++) {
-                if (shape[r][c] === GOLD && sy + r >= 0 && sy + r < ROWS) {
-                    board[sy + r][sx + c] = GOLD;
-                }
-            }
-        }
-        // Flash effect sound
+        // Instead of placing directly, flag the next piece as gold
+        nextIsGold = true;
+        // Sound
         playTone(880, 0.1, 'sine', 0.3);
         setTimeout(() => playTone(1100, 0.15, 'sine', 0.3), 100);
     }
@@ -1083,6 +1073,7 @@
         pieceBag = [];
         goldCols = [];
         goldSpawnCounter = 0;
+        nextIsGold = false;
         quizActive = false;
         usedQuizzes = [];
         document.getElementById('quizOverlay').classList.remove('show');
