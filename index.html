@@ -247,9 +247,11 @@
 
     // Special block types
     const GOLD = 8;     // 金色ブロック
-    const STONE = 9;    // 消せないブロック（灰色）
+    const STONE = 9;         // 消せないブロック（耐久2）
+    const STONE_CRACK = 10;  // ヒビ入りSTONE（耐久1 — 次で消える）
     COLORS[GOLD] = '#ffd700';
     COLORS[STONE] = '#555555';
+    COLORS[STONE_CRACK] = '#776644';
 
     // === Quiz Data ===
     const QUIZZES = [
@@ -551,18 +553,19 @@
         currentPiece.shape = oldShape;
     }
 
-    // === Line Clear (STONE blocks survive) ===
+    // === Line Clear ===
+    // STONE: survives 1st clear (→ becomes STONE_CRACK), destroyed on 2nd clear
+    function isStoneType(v) { return v === STONE || v === STONE_CRACK; }
+
     function clearLines() {
         const fullRows = [];
         for (let r = 0; r < ROWS; r++) {
-            // Row is "full" if every cell is non-empty (STONE counts)
             if (board[r].every(cell => cell !== EMPTY)) {
                 fullRows.push(r);
             }
         }
         if (fullRows.length === 0) return;
 
-        // Score
         const points = [0, 100, 300, 500, 800];
         score += (points[fullRows.length] || 800) * level;
         totalLines += fullRows.length;
@@ -570,70 +573,46 @@
         dropInterval = Math.max(100, 1000 - (level - 1) * 80);
 
         playClear(fullRows.length);
-
         animatingRows = fullRows;
         animTimer = 300;
 
         setTimeout(() => {
-            // Check if any full row contains STONE
-            const hasStone = fullRows.some(r => board[r].some(c => c === STONE));
-            if (hasStone) {
-                clearLinesProper(fullRows);
-            } else {
-                fullRows.sort((a, b) => b - a).forEach(r => {
-                    board.splice(r, 1);
-                    board.unshift(new Array(COLS).fill(EMPTY));
-                });
+            // Process each full row
+            fullRows.sort((a, b) => b - a);
+
+            // Step 1: In each full row, handle stones and clear others
+            fullRows.forEach(r => {
+                for (let c = 0; c < COLS; c++) {
+                    if (board[r][c] === STONE) {
+                        board[r][c] = STONE_CRACK; // 1st hit → cracked
+                    } else if (board[r][c] === STONE_CRACK) {
+                        board[r][c] = EMPTY; // 2nd hit → destroyed
+                    } else {
+                        board[r][c] = EMPTY; // normal block → cleared
+                    }
+                }
+            });
+
+            // Step 2: Gravity — compact each column downward, skipping stone cells
+            for (let c = 0; c < COLS; c++) {
+                // Collect non-empty cells from bottom to top (preserving order)
+                const blocks = []; // { value, isStone, origRow }
+                for (let r = ROWS - 1; r >= 0; r--) {
+                    if (board[r][c] !== EMPTY) {
+                        blocks.push(board[r][c]);
+                    }
+                }
+                // Rebuild column from bottom
+                let bi = 0;
+                for (let r = ROWS - 1; r >= 0; r--) {
+                    board[r][c] = bi < blocks.length ? blocks[bi++] : EMPTY;
+                }
             }
+
             animatingRows = [];
         }, 300);
 
         updateUI();
-    }
-
-    // Better line clear that preserves STONE
-    // Override the setTimeout logic above with a cleaner version
-    function clearLinesProper(fullRows) {
-        // Collect stone positions
-        const stonePositions = [];
-        for (let r = 0; r < ROWS; r++) {
-            for (let c = 0; c < COLS; c++) {
-                if (board[r][c] === STONE) stonePositions.push({ r, c });
-            }
-        }
-
-        // Clear non-stone cells in full rows
-        fullRows.sort((a, b) => b - a).forEach(row => {
-            for (let c = 0; c < COLS; c++) {
-                if (board[row][c] !== STONE) {
-                    board[row][c] = EMPTY;
-                }
-            }
-        });
-
-        // Gravity: drop non-stone blocks down to fill gaps
-        // Process from bottom to top
-        for (let c = 0; c < COLS; c++) {
-            let writeRow = ROWS - 1;
-            // Find lowest stone in this column to not move past it
-            for (let r = ROWS - 1; r >= 0; r--) {
-                if (board[r][c] === STONE) continue;
-                if (board[r][c] !== EMPTY) {
-                    if (r !== writeRow) {
-                        // Find next non-stone write position
-                        while (writeRow >= 0 && board[writeRow][c] === STONE) writeRow--;
-                        if (writeRow >= 0 && writeRow !== r) {
-                            board[writeRow][c] = board[r][c];
-                            board[r][c] = EMPTY;
-                        }
-                    }
-                    writeRow--;
-                    while (writeRow >= 0 && board[writeRow][c] === STONE) writeRow--;
-                } else {
-                    // skip empty
-                }
-            }
-        }
     }
 
     function updateUI() {
@@ -793,16 +772,25 @@
             const sx = px + size * 0.3 + Math.sin(Date.now() * 0.003) * 3;
             const sy2 = py + size * 0.3 + Math.cos(Date.now() * 0.004) * 3;
             ctx.fillRect(sx, sy2, 2, 2);
-        } else if (colorIdx === STONE) {
-            // Stone block: dark grey with X pattern
-            ctx.fillStyle = '#444';
+        } else if (colorIdx === STONE || colorIdx === STONE_CRACK) {
+            // Stone block
+            const cracked = colorIdx === STONE_CRACK;
+            ctx.fillStyle = cracked ? '#665544' : '#444';
             ctx.fillRect(px + 1, py + 1, size - 2, size - 2);
-            ctx.strokeStyle = '#666';
+            ctx.strokeStyle = cracked ? '#aa8866' : '#666';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(px + 3, py + 3); ctx.lineTo(px + size - 3, py + size - 3);
             ctx.moveTo(px + size - 3, py + 3); ctx.lineTo(px + 3, py + size - 3);
             ctx.stroke();
+            if (cracked) {
+                // Extra crack lines
+                ctx.strokeStyle = '#aa664488';
+                ctx.beginPath();
+                ctx.moveTo(px + size / 2, py + 2); ctx.lineTo(px + 3, py + size / 2);
+                ctx.moveTo(px + size / 2, py + size - 2); ctx.lineTo(px + size - 3, py + size / 2);
+                ctx.stroke();
+            }
             ctx.fillStyle = 'rgba(0,0,0,0.3)';
             ctx.fillRect(px + 1, py + size - 4, size - 2, 3);
         } else {
