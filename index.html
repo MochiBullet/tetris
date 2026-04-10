@@ -270,12 +270,11 @@
 
     function resizeCanvas() {
         const wrap = document.getElementById('canvasWrap');
-        const maxH = wrap.clientHeight;
-        const maxW = wrap.clientWidth;
-        cellSize = Math.floor(Math.min(maxH / ROWS, maxW / COLS));
+        const maxH = wrap.clientHeight || window.innerHeight * 0.6;
+        const maxW = wrap.clientWidth || window.innerWidth * 0.9;
+        cellSize = Math.max(10, Math.floor(Math.min(maxH / ROWS, maxW / COLS)));
         canvas.width = cellSize * COLS;
         canvas.height = cellSize * ROWS;
-        drawBoard();
     }
     window.addEventListener('resize', resizeCanvas);
 
@@ -586,46 +585,110 @@
 
     // === Title Screen ===
     function drawTitleScreen() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#0f0';
-        ctx.font = 'bold ' + Math.floor(cellSize * 1.8) + 'px Courier New';
-        ctx.textAlign = 'center';
-        ctx.fillText('TETRIS', canvas.width / 2, canvas.height * 0.35);
+        const w = canvas.width;
+        const h = canvas.height;
+        if (w === 0 || h === 0) return;
 
-        // Demo pieces
-        const demoColors = ['#00f0f0', '#f0a000', '#a000f0', '#f00000', '#00f000'];
-        for (let i = 0; i < 5; i++) {
-            ctx.fillStyle = demoColors[i];
-            const dx = canvas.width * 0.2 + i * cellSize * 1.5;
-            ctx.fillRect(dx, canvas.height * 0.42, cellSize - 2, cellSize - 2);
+        // Background
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, w, h);
+
+        // Subtle grid
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 0.5;
+        for (let r = 0; r <= ROWS; r++) {
+            ctx.beginPath(); ctx.moveTo(0, r * cellSize); ctx.lineTo(w, r * cellSize); ctx.stroke();
+        }
+        for (let c = 0; c <= COLS; c++) {
+            ctx.beginPath(); ctx.moveTo(c * cellSize, 0); ctx.lineTo(c * cellSize, h); ctx.stroke();
         }
 
+        // Falling demo blocks in background
+        const time = Date.now() * 0.001;
+        const demoBlocks = COLORS.slice(1);
+        for (let i = 0; i < 12; i++) {
+            const bx = ((i * 97 + 31) % COLS);
+            const by = ((time * (0.5 + i * 0.15) + i * 3.7) % (ROWS + 4)) - 2;
+            const ci = i % demoBlocks.length;
+            ctx.fillStyle = demoBlocks[ci] + '18';
+            ctx.fillRect(bx * cellSize + 1, by * cellSize + 1, cellSize - 2, cellSize - 2);
+        }
+
+        ctx.textAlign = 'center';
+
+        // Title with each letter in a different Tetris color
+        const title = 'TETRIS';
+        const titleColors = ['#00f0f0', '#0000f0', '#f0a000', '#f0f000', '#a000f0', '#f00000'];
+        const fontSize = Math.floor(cellSize * 2);
+        ctx.font = 'bold ' + fontSize + 'px Courier New';
+        const totalW = ctx.measureText(title).width;
+        const startX = (w - totalW) / 2;
+        for (let i = 0; i < title.length; i++) {
+            ctx.fillStyle = titleColors[i];
+            const charW = ctx.measureText(title[i]).width;
+            const cx = startX + ctx.measureText(title.slice(0, i)).width;
+            // Slight bounce per letter
+            const bounce = Math.sin(time * 3 + i * 0.8) * 3;
+            ctx.fillText(title[i], cx + charW / 2 + totalW * 0.02, h * 0.32 + bounce);
+        }
+
+        // Tetrominoes display
+        const demoY = h * 0.40;
+        const demoShapes = [SHAPES.T[0], SHAPES.S[0], SHAPES.I[0], SHAPES.L[0], SHAPES.Z[0]];
+        const demoC = [COLORS[6], COLORS[5], COLORS[1], COLORS[3], COLORS[7]];
+        const blockS = Math.floor(cellSize * 0.55);
+        let totalDemoW = demoShapes.reduce((sum, sh) => sum + sh[0].length * blockS + blockS, 0) - blockS;
+        let dx = (w - totalDemoW) / 2;
+        demoShapes.forEach((sh, si) => {
+            for (let r = 0; r < sh.length; r++) {
+                for (let c = 0; c < sh[r].length; c++) {
+                    if (sh[r][c] === 0) continue;
+                    ctx.fillStyle = demoC[si];
+                    ctx.fillRect(dx + c * blockS + 1, demoY + r * blockS + 1, blockS - 2, blockS - 2);
+                    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+                    ctx.fillRect(dx + c * blockS + 1, demoY + r * blockS + 1, blockS - 2, 2);
+                }
+            }
+            dx += sh[0].length * blockS + blockS;
+        });
+
+        // Blink start message
         titleBlink += 0.05;
         if (Math.sin(titleBlink) > -0.3) {
             ctx.fillStyle = '#ff0';
-            ctx.font = Math.floor(cellSize * 0.7) + 'px Courier New';
-            ctx.fillText(isTouchDevice ? 'TAP TO START' : 'PRESS SPACE', canvas.width / 2, canvas.height * 0.6);
+            ctx.font = 'bold ' + Math.floor(cellSize * 0.75) + 'px Courier New';
+            ctx.fillText(isTouchDevice ? 'TAP TO START' : 'PRESS SPACE TO START', w / 2, h * 0.62);
         }
 
+        // Controls hint
         ctx.fillStyle = '#555';
         ctx.font = Math.floor(cellSize * 0.5) + 'px Courier New';
         if (isTouchDevice) {
-            ctx.fillText('Use buttons below', canvas.width / 2, canvas.height * 0.75);
+            ctx.fillText('Use buttons below to play', w / 2, h * 0.75);
         } else {
-            ctx.fillText('Arrows / Up=Rotate', canvas.width / 2, canvas.height * 0.72);
-            ctx.fillText('Space=Drop / R=Restart', canvas.width / 2, canvas.height * 0.78);
+            ctx.fillText('Arrows: Move / Up: Rotate', w / 2, h * 0.73);
+            ctx.fillText('Space: Hard Drop / R: Restart', w / 2, h * 0.79);
         }
+
+        // Credit
+        ctx.fillStyle = '#333';
+        ctx.font = Math.floor(cellSize * 0.4) + 'px Courier New';
+        ctx.fillText('MochiBullet', w / 2, h * 0.92);
+
         ctx.textAlign = 'left';
     }
 
     // === Game Loop ===
     let lastTime = 0;
+    let firstFrame = true;
 
     function gameLoop(time) {
-        const dt = time - lastTime;
+        if (firstFrame) { lastTime = time; firstFrame = false; }
+        const dt = Math.min(time - lastTime, 100); // cap dt to avoid huge jumps
         lastTime = time;
 
         if (!gameStarted) {
+            resizeCanvas();
             drawTitleScreen();
             requestAnimationFrame(gameLoop);
             return;
