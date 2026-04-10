@@ -145,6 +145,26 @@
         @media (orientation: landscape) and (pointer: coarse) {
             .ctrl-btn { height: 52px; font-size: 22px; }
         }
+
+        /* Quiz modal */
+        #quizOverlay.show { display: flex !important; }
+        .quiz-btn {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #444;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.04);
+            color: #e6edf3;
+            font-size: 14px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.15s;
+            text-align: left;
+        }
+        .quiz-btn:hover { background: rgba(255,215,0,0.1); border-color: #ffd700; }
+        .quiz-btn:active { transform: scale(0.98); }
+        .quiz-btn.correct { background: rgba(74,222,128,0.2); border-color: #4ade80; color: #4ade80; }
+        .quiz-btn.wrong { background: rgba(255,68,68,0.2); border-color: #f44; color: #f44; }
     </style>
 </head>
 <body>
@@ -185,6 +205,17 @@
         </div>
     </div>
 
+    <!-- Quiz Modal -->
+    <div id="quizOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:500;justify-content:center;align-items:center;">
+        <div style="background:#161b22;border:2px solid #ffd700;border-radius:16px;max-width:400px;width:90%;padding:0;overflow:hidden;">
+            <div id="quizFace" style="text-align:center;font-size:80px;padding:16px 0 0;">🤪</div>
+            <div style="padding:4px 20px 20px;">
+                <div id="quizQ" style="font-size:15px;font-weight:700;color:#ffd700;margin-bottom:16px;text-align:center;line-height:1.5;"></div>
+                <div id="quizChoices" style="display:flex;flex-direction:column;gap:8px;"></div>
+            </div>
+        </div>
+    </div>
+
     <script>
     // === Constants ===
     const COLS = 10;
@@ -213,6 +244,42 @@
         Z: [[[7,7,0],[0,7,7],[0,0,0]],[[0,0,7],[0,7,7],[0,7,0]],[[0,0,0],[7,7,0],[0,7,7]],[[0,7,0],[7,7,0],[7,0,0]]],
     };
     const PIECE_NAMES = ['I','J','L','O','S','T','Z'];
+
+    // Special block types
+    const GOLD = 8;     // 金色ブロック
+    const STONE = 9;    // 消せないブロック（灰色）
+    COLORS[GOLD] = '#ffd700';
+    COLORS[STONE] = '#555555';
+
+    // === Quiz Data ===
+    const QUIZZES = [
+        { q: 'テトリスを作ったのはどこの国の人？', a: ['ロシア', 'アメリカ', '日本'], c: 0 },
+        { q: '地球から太陽までの距離は約何億km？', a: ['1.5億km', '3億km', '5000万km'], c: 0 },
+        { q: '日本で一番長い川は？', a: ['信濃川', '利根川', '石狩川'], c: 0 },
+        { q: '「吾輩は猫である」の作者は？', a: ['夏目漱石', '太宰治', '芥川龍之介'], c: 0 },
+        { q: '世界で一番大きい砂漠は？', a: ['サハラ砂漠', '南極大陸', 'ゴビ砂漠'], c: 1 },
+        { q: '人間の体で一番硬い部分は？', a: ['歯のエナメル質', '頭蓋骨', '脛骨'], c: 0 },
+        { q: '1年で一番日が短い日を何と呼ぶ？', a: ['冬至', '夏至', '秋分'], c: 0 },
+        { q: 'パンダの尻尾の色は？', a: ['白', '黒', 'グレー'], c: 0 },
+        { q: '水の化学式はどれ？', a: ['H2O', 'CO2', 'NaCl'], c: 0 },
+        { q: '月が地球を一周するのにかかる日数は約？', a: ['27日', '14日', '60日'], c: 0 },
+        { q: '日本の県で面積が一番大きいのは？', a: ['北海道', '岩手県', '長野県'], c: 0 },
+        { q: '「コンピュータの父」と呼ばれるのは？', a: ['チャールズ・バベッジ', 'アラン・チューリング', 'ビル・ゲイツ'], c: 0 },
+        { q: '光の三原色は赤・緑とあと一つは？', a: ['青', '黄', '紫'], c: 0 },
+        { q: 'タコの心臓はいくつ？', a: ['3つ', '1つ', '2つ'], c: 0 },
+        { q: '1メートルは何センチ？', a: ['100cm', '10cm', '1000cm'], c: 0 },
+        { q: 'チョコレートの原料は？', a: ['カカオ', 'コーヒー豆', 'ピーナッツ'], c: 0 },
+        { q: '富士山の標高は？', a: ['3776m', '3556m', '4012m'], c: 0 },
+        { q: 'インターネットの「WWW」は何の略？', a: ['World Wide Web', 'World War Web', 'Wide World Web'], c: 0 },
+        { q: '虹は何色？', a: ['7色', '5色', '6色'], c: 0 },
+        { q: 'テトリスのIピースは何マス？', a: ['4マス', '3マス', '5マス'], c: 0 },
+    ];
+    let usedQuizzes = [];
+
+    // Gold block state
+    let goldCols = [];           // columns where gold blocks were placed
+    let quizActive = false;      // quiz modal is open
+    let goldSpawnCounter = 0;    // count pieces to decide when to spawn gold
 
     // SRS wall kick data
     const KICK_JLSTZ = [
@@ -372,12 +439,69 @@
         }
         playDrop();
         clearLines();
+
+        // Maybe spawn gold block
+        goldSpawnCounter++;
+        if (goldSpawnCounter >= 12 + Math.floor(Math.random() * 8) && !quizActive) {
+            goldSpawnCounter = 0;
+            spawnGoldPiece();
+        }
+
+        // Check if all gold blocks were cleared from the board
+        if (goldCols.length > 0 && !boardHasGold()) {
+            startQuiz();
+            return; // don't spawn next piece yet
+        }
+
         spawnPiece();
+    }
+
+    function boardHasGold() {
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                if (board[r][c] === GOLD) return true;
+            }
+        }
+        return false;
+    }
+
+    function spawnGoldPiece() {
+        // Place a random gold shape (2-4 blocks) near the top
+        const shapes = [
+            [[GOLD, GOLD]], // horizontal 2
+            [[GOLD],[GOLD]], // vertical 2
+            [[GOLD, GOLD],[GOLD, 0]], // L shape
+            [[GOLD, GOLD],[0, GOLD]], // reverse L
+        ];
+        const shape = shapes[Math.floor(Math.random() * shapes.length)];
+        const sx = Math.floor(Math.random() * (COLS - shape[0].length));
+
+        // Find lowest valid Y
+        let sy = 0;
+        goldCols = [];
+        for (let r = 0; r < shape.length; r++) {
+            for (let c = 0; c < shape[r].length; c++) {
+                if (shape[r][c] === GOLD) goldCols.push(sx + c);
+            }
+        }
+        goldCols = [...new Set(goldCols)];
+
+        // Place on board at top
+        for (let r = 0; r < shape.length; r++) {
+            for (let c = 0; c < shape[r].length; c++) {
+                if (shape[r][c] === GOLD && sy + r >= 0 && sy + r < ROWS) {
+                    board[sy + r][sx + c] = GOLD;
+                }
+            }
+        }
+        // Flash effect sound
+        playTone(880, 0.1, 'sine', 0.3);
+        setTimeout(() => playTone(1100, 0.15, 'sine', 0.3), 100);
     }
 
     // === Movement ===
     function moveLeft() {
-        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0) return;
+        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0 || quizActive) return;
         if (!collides(currentPiece, currentPiece.x - 1, currentPiece.y)) {
             currentPiece.x--;
             lockDelay = 0;
@@ -385,7 +509,7 @@
         }
     }
     function moveRight() {
-        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0) return;
+        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0 || quizActive) return;
         if (!collides(currentPiece, currentPiece.x + 1, currentPiece.y)) {
             currentPiece.x++;
             lockDelay = 0;
@@ -393,7 +517,7 @@
         }
     }
     function moveDown() {
-        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0) return;
+        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0 || quizActive) return;
         if (!collides(currentPiece, currentPiece.x, currentPiece.y + 1)) {
             currentPiece.y++;
             score += 1;
@@ -402,7 +526,7 @@
         return false;
     }
     function hardDrop() {
-        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0) return;
+        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0 || quizActive) return;
         let dropped = 0;
         while (!collides(currentPiece, currentPiece.x, currentPiece.y + 1)) {
             currentPiece.y++;
@@ -413,7 +537,7 @@
     }
 
     function rotate() {
-        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0) return;
+        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0 || quizActive) return;
         if (currentPiece.name === 'O') return; // O piece doesn't rotate
         const newRot = (currentPiece.rotation + 1) % currentPiece.shapes.length;
         const oldShape = currentPiece.shape;
@@ -437,10 +561,11 @@
         currentPiece.shape = oldShape;
     }
 
-    // === Line Clear ===
+    // === Line Clear (STONE blocks survive) ===
     function clearLines() {
         const fullRows = [];
         for (let r = 0; r < ROWS; r++) {
+            // Row is "full" if every cell is non-empty (STONE counts)
             if (board[r].every(cell => cell !== EMPTY)) {
                 fullRows.push(r);
             }
@@ -456,26 +581,193 @@
 
         playClear(fullRows.length);
 
-        // Flash animation
         animatingRows = fullRows;
         animTimer = 300;
 
-        // Actually clear after animation
         setTimeout(() => {
-            fullRows.sort((a, b) => b - a).forEach(r => {
-                board.splice(r, 1);
-                board.unshift(new Array(COLS).fill(EMPTY));
-            });
+            // Check if any full row contains STONE
+            const hasStone = fullRows.some(r => board[r].some(c => c === STONE));
+            if (hasStone) {
+                clearLinesProper(fullRows);
+            } else {
+                fullRows.sort((a, b) => b - a).forEach(r => {
+                    board.splice(r, 1);
+                    board.unshift(new Array(COLS).fill(EMPTY));
+                });
+            }
             animatingRows = [];
         }, 300);
 
         updateUI();
     }
 
+    // Better line clear that preserves STONE
+    // Override the setTimeout logic above with a cleaner version
+    function clearLinesProper(fullRows) {
+        // Collect stone positions
+        const stonePositions = [];
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                if (board[r][c] === STONE) stonePositions.push({ r, c });
+            }
+        }
+
+        // Clear non-stone cells in full rows
+        fullRows.sort((a, b) => b - a).forEach(row => {
+            for (let c = 0; c < COLS; c++) {
+                if (board[row][c] !== STONE) {
+                    board[row][c] = EMPTY;
+                }
+            }
+        });
+
+        // Gravity: drop non-stone blocks down to fill gaps
+        // Process from bottom to top
+        for (let c = 0; c < COLS; c++) {
+            let writeRow = ROWS - 1;
+            // Find lowest stone in this column to not move past it
+            for (let r = ROWS - 1; r >= 0; r--) {
+                if (board[r][c] === STONE) continue;
+                if (board[r][c] !== EMPTY) {
+                    if (r !== writeRow) {
+                        // Find next non-stone write position
+                        while (writeRow >= 0 && board[writeRow][c] === STONE) writeRow--;
+                        if (writeRow >= 0 && writeRow !== r) {
+                            board[writeRow][c] = board[r][c];
+                            board[r][c] = EMPTY;
+                        }
+                    }
+                    writeRow--;
+                    while (writeRow >= 0 && board[writeRow][c] === STONE) writeRow--;
+                } else {
+                    // skip empty
+                }
+            }
+        }
+    }
+
     function updateUI() {
         document.getElementById('score').textContent = score;
         document.getElementById('level').textContent = level;
         document.getElementById('linesCleared').textContent = totalLines;
+    }
+
+    // === Quiz System ===
+    function startQuiz() {
+        quizActive = true;
+        // Pick unused quiz
+        if (usedQuizzes.length >= QUIZZES.length) usedQuizzes = [];
+        let idx;
+        do { idx = Math.floor(Math.random() * QUIZZES.length); } while (usedQuizzes.includes(idx));
+        usedQuizzes.push(idx);
+        const quiz = QUIZZES[idx];
+
+        const overlay = document.getElementById('quizOverlay');
+        const qEl = document.getElementById('quizQ');
+        const choices = document.getElementById('quizChoices');
+        const face = document.getElementById('quizFace');
+
+        // Random weird face
+        const faces = ['🤪', '🥸', '😜', '🤡', '👺', '🫠', '🧐', '🤓', '😏', '🥴'];
+        face.textContent = faces[Math.floor(Math.random() * faces.length)];
+
+        qEl.textContent = quiz.q;
+        choices.innerHTML = '';
+
+        // Shuffle answers but track correct
+        const indices = [0, 1, 2];
+        for (let i = indices.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [indices[i], indices[j]] = [indices[j], indices[i]];
+        }
+
+        indices.forEach(ai => {
+            const btn = document.createElement('button');
+            btn.className = 'quiz-btn';
+            btn.textContent = quiz.a[ai];
+            btn.addEventListener('click', () => handleQuizAnswer(ai === quiz.c, btn, choices));
+            choices.appendChild(btn);
+        });
+
+        overlay.classList.add('show');
+
+        // Sound
+        playTone(440, 0.1, 'sine', 0.3);
+        setTimeout(() => playTone(554, 0.1, 'sine', 0.3), 100);
+        setTimeout(() => playTone(659, 0.15, 'sine', 0.3), 200);
+    }
+
+    function handleQuizAnswer(correct, btn, choices) {
+        // Disable all buttons
+        choices.querySelectorAll('.quiz-btn').forEach(b => {
+            b.style.pointerEvents = 'none';
+        });
+
+        if (correct) {
+            btn.classList.add('correct');
+            document.getElementById('quizFace').textContent = '🎉';
+            // Clear gold columns
+            playTone(880, 0.15, 'sine', 0.4);
+            setTimeout(() => playTone(1100, 0.2, 'sine', 0.4), 100);
+            setTimeout(() => {
+                clearGoldColumns();
+                closeQuiz();
+            }, 800);
+        } else {
+            btn.classList.add('wrong');
+            document.getElementById('quizFace').textContent = '😈';
+            // Drop 2x2 stone block
+            playTone(100, 0.3, 'sawtooth', 0.4);
+            setTimeout(() => {
+                dropStoneBlock();
+                closeQuiz();
+            }, 800);
+        }
+    }
+
+    function clearGoldColumns() {
+        // Clear all blocks in the gold columns (entire vertical line)
+        const cols = [...new Set(goldCols)];
+        cols.forEach(c => {
+            for (let r = 0; r < ROWS; r++) {
+                if (board[r][c] !== STONE) {
+                    board[r][c] = EMPTY;
+                }
+            }
+        });
+        score += cols.length * 500;
+        goldCols = [];
+    }
+
+    function dropStoneBlock() {
+        // Drop a 2x2 STONE block at random position
+        const sx = Math.floor(Math.random() * (COLS - 1));
+        // Find where it lands
+        let sy = 0;
+        while (sy + 1 < ROWS &&
+               board[sy + 1][sx] === EMPTY && board[sy + 1][sx + 1] === EMPTY &&
+               board[sy][sx] === EMPTY && board[sy][sx + 1] === EMPTY) {
+            sy++;
+        }
+        // Clamp
+        if (sy + 1 >= ROWS) sy = ROWS - 2;
+        // Place if cells are empty (don't overwrite existing blocks, go up)
+        while (sy > 0 && (board[sy][sx] !== EMPTY || board[sy][sx+1] !== EMPTY || board[sy-1][sx] !== EMPTY || board[sy-1][sx+1] !== EMPTY)) {
+            sy--;
+        }
+        if (sy >= 1) {
+            board[sy-1][sx] = STONE;
+            board[sy-1][sx+1] = STONE;
+            board[sy][sx] = STONE;
+            board[sy][sx+1] = STONE;
+        }
+        goldCols = [];
+    }
+
+    function closeQuiz() {
+        document.getElementById('quizOverlay').classList.remove('show');
+        quizActive = false;
+        spawnPiece();
     }
 
     // === Ghost Piece ===
@@ -498,14 +790,37 @@
             ctx.fillRect(px + 1, py + 1, size - 2, size - 2);
             ctx.strokeStyle = color + '50';
             ctx.strokeRect(px + 1, py + 1, size - 2, size - 2);
+        } else if (colorIdx === GOLD) {
+            // Gold block: pulsing glow
+            const pulse = 0.7 + Math.sin(Date.now() * 0.005) * 0.3;
+            ctx.fillStyle = `rgba(255, 215, 0, ${pulse})`;
+            ctx.fillRect(px + 1, py + 1, size - 2, size - 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fillRect(px + 1, py + 1, size - 2, 3);
+            ctx.fillRect(px + 1, py + 1, 3, size - 2);
+            // Star sparkle
+            ctx.fillStyle = '#fff';
+            const sx = px + size * 0.3 + Math.sin(Date.now() * 0.003) * 3;
+            const sy2 = py + size * 0.3 + Math.cos(Date.now() * 0.004) * 3;
+            ctx.fillRect(sx, sy2, 2, 2);
+        } else if (colorIdx === STONE) {
+            // Stone block: dark grey with X pattern
+            ctx.fillStyle = '#444';
+            ctx.fillRect(px + 1, py + 1, size - 2, size - 2);
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(px + 3, py + 3); ctx.lineTo(px + size - 3, py + size - 3);
+            ctx.moveTo(px + size - 3, py + 3); ctx.lineTo(px + 3, py + size - 3);
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.fillRect(px + 1, py + size - 4, size - 2, 3);
         } else {
             ctx.fillStyle = color;
             ctx.fillRect(px + 1, py + 1, size - 2, size - 2);
-            // Highlight
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
             ctx.fillRect(px + 1, py + 1, size - 2, 3);
             ctx.fillRect(px + 1, py + 1, 3, size - 2);
-            // Shadow
             ctx.fillStyle = 'rgba(0,0,0,0.3)';
             ctx.fillRect(px + 1, py + size - 4, size - 2, 3);
             ctx.fillRect(px + size - 4, py + 1, 3, size - 2);
@@ -698,7 +1013,7 @@
             animTimer -= dt;
         }
 
-        if (!gameOver && animatingRows.length === 0) {
+        if (!gameOver && animatingRows.length === 0 && !quizActive) {
             // Auto drop
             lastDrop += dt;
             if (lastDrop >= dropInterval) {
@@ -766,6 +1081,11 @@
         animatingRows = [];
         animTimer = 0;
         pieceBag = [];
+        goldCols = [];
+        goldSpawnCounter = 0;
+        quizActive = false;
+        usedQuizzes = [];
+        document.getElementById('quizOverlay').classList.remove('show');
         nextPiece = null;
         spawnPiece();
         updateUI();
