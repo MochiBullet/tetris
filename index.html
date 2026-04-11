@@ -1206,8 +1206,11 @@
         flickCount = 0;
     }, { passive: false });
 
-    // Track movement during touch for continuous horizontal movement
-    let lastMoveX = 0;
+    // Track movement during touch
+    let softDropping = false;
+    let softDropCount = 0;
+    let lastTouchY = 0;
+
     canvas.addEventListener('touchmove', (e) => {
         if (!gameStarted || gameOver || quizActive) return;
         const t = e.touches[0];
@@ -1227,10 +1230,21 @@
             touchMoved = true;
         }
 
-        // Soft drop: if dragging down significantly
-        if (dy > threshold * 1.5 && absDy > absDx) {
+        // Soft drop: drag down to accelerate falling
+        const downThreshold = Math.max(20, cellSize * 0.6);
+        const downSteps = Math.floor(dy / downThreshold);
+        if (downSteps > softDropCount && absDy > absDx * 0.8) {
+            const diff = downSteps - softDropCount;
+            for (let i = 0; i < diff; i++) {
+                moveDown();
+                lastDrop = 0;
+            }
+            softDropCount = downSteps;
+            softDropping = true;
             touchMoved = true;
         }
+
+        lastTouchY = t.clientY;
     }, { passive: true });
 
     canvas.addEventListener('touchend', (e) => {
@@ -1242,13 +1256,21 @@
         const absDx = Math.abs(dx);
         const absDy = Math.abs(dy);
 
-        if (!touchMoved && dt < 250 && absDx < 20 && absDy < 20) {
+        // Hard drop: fast downward swipe + finger released quickly
+        // Detect by: moved down significantly AND short duration AND high velocity
+        const velocity = absDy / Math.max(1, dt); // px per ms
+        const isSwipeDown = dy > 40 && absDy > absDx && velocity > 0.5 && dt < 300;
+
+        if (isSwipeDown) {
+            // Quick flick down → hard drop
+            hardDrop();
+        } else if (!touchMoved && dt < 250 && absDx < 20 && absDy < 20) {
             // Tap → rotate
             rotate();
-        } else if (absDy > absDx && dy > 40 && dt < 400) {
-            // Swipe down → hard drop
-            hardDrop();
         }
+
+        softDropping = false;
+        softDropCount = 0;
     }, { passive: true });
 
     // PC: click to start/restart
