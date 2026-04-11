@@ -120,6 +120,8 @@
         .ctrl-btn.rotate-btn { color: #0f0; font-size: 24px; }
         .ctrl-btn.drop-btn { color: #f44; font-size: 22px; letter-spacing: 1px; }
         .ctrl-btn.down-btn { color: #ff0; }
+        .ctrl-btn.hold-btn { color: #0ff; font-size: 14px; letter-spacing: 1px; }
+        .hold-area { text-align: center; }
 
         /* Show controls on touch devices */
         @media (pointer: coarse) {
@@ -170,6 +172,10 @@
 <body>
     <div id="gameArea">
         <div class="top-bar">
+            <div class="hold-area">
+                <div class="next-label">HOLD</div>
+                <canvas id="holdCanvas" width="80" height="80"></canvas>
+            </div>
             <div class="score-area">
                 <div class="stat">
                     <div class="stat-label">SCORE</div>
@@ -192,11 +198,12 @@
         <div id="canvasWrap">
             <canvas id="gameCanvas"></canvas>
         </div>
-        <div id="message">Arrow keys / Up=Rotate / Space=Hard Drop / R=Restart</div>
+        <div id="message">Arrows=Move / Up=Rotate / Space=Drop / C=Hold / R=Restart</div>
     </div>
 
     <div id="controls">
         <div class="ctrl-row">
+            <button class="ctrl-btn hold-btn" id="btnHold">HOLD</button>
             <button class="ctrl-btn" id="btnLeft">◀</button>
             <button class="ctrl-btn" id="btnRight">▶</button>
             <button class="ctrl-btn down-btn" id="btnDown">▼</button>
@@ -283,6 +290,10 @@
     let quizActive = false;      // quiz modal is open
     let goldSpawnCounter = 0;    // count pieces to decide when to spawn gold
 
+    // Hold
+    let holdPiece = null;
+    let holdUsed = false;  // can only hold once per piece
+
     // SRS wall kick data
     const KICK_JLSTZ = [
         [[0,0],[-1,0],[-1,1],[0,-2],[-1,-2]], // 0→1
@@ -333,6 +344,8 @@
     const ctx = canvas.getContext('2d');
     const nextCanvas = document.getElementById('nextCanvas');
     const nextCtx = nextCanvas.getContext('2d');
+    const holdCanvas = document.getElementById('holdCanvas');
+    const holdCtx = holdCanvas.getContext('2d');
     const isTouchDevice = matchMedia('(pointer: coarse)').matches;
 
     let cellSize = 30;
@@ -405,6 +418,7 @@
         currentPiece = nextPiece || randomPiece();
         nextPiece = randomPiece();
         lockDelay = 0;
+        holdUsed = false; // allow hold again for new piece
 
         // If gold flag is set, convert this piece to gold
         if (nextIsGold) {
@@ -423,6 +437,7 @@
             playGameOver();
         }
         drawNext();
+        drawHold();
     }
 
     function collides(piece, px, py) {
@@ -551,6 +566,42 @@
         }
         // Rotation failed
         currentPiece.shape = oldShape;
+    }
+
+    // === Hold ===
+    function holdCurrentPiece() {
+        if (!currentPiece || gameOver || !gameStarted || animatingRows.length > 0 || quizActive) return;
+        if (holdUsed) return; // can only hold once per turn
+        if (currentPiece.isGold) return; // can't hold gold pieces
+
+        const savedName = currentPiece.name;
+
+        if (holdPiece) {
+            // Swap: spawn the held piece
+            const name = holdPiece;
+            const shapes = SHAPES[name];
+            const startY = name === 'I' ? -1 : 0;
+            currentPiece = {
+                name,
+                shapes,
+                rotation: 0,
+                shape: shapes[0],
+                x: Math.floor((COLS - shapes[0][0].length) / 2),
+                y: startY,
+                color: COLORS[shapes[0].flat().find(v => v > 0)],
+            };
+        } else {
+            // No held piece, spawn next
+            currentPiece = nextPiece || randomPiece();
+            nextPiece = randomPiece();
+            drawNext();
+        }
+
+        holdPiece = savedName;
+        holdUsed = true;
+        lockDelay = 0;
+        drawHold();
+        playTone(300, 0.08, 'square', 0.15);
     }
 
     // === Line Clear ===
@@ -876,6 +927,28 @@
         }
     }
 
+    function drawHold() {
+        holdCtx.clearRect(0, 0, 80, 80);
+        if (!holdPiece) return;
+        const s = SHAPES[holdPiece][0];
+        const ns = 18;
+        const ox = Math.floor((80 - s[0].length * ns) / 2);
+        const oy = Math.floor((80 - s.length * ns) / 2);
+        const dimmed = holdUsed;
+        for (let r = 0; r < s.length; r++) {
+            for (let c = 0; c < s[r].length; c++) {
+                if (s[r][c] === 0) continue;
+                const color = COLORS[s[r][c]];
+                holdCtx.fillStyle = dimmed ? color + '44' : color;
+                holdCtx.fillRect(ox + c * ns + 1, oy + r * ns + 1, ns - 2, ns - 2);
+                if (!dimmed) {
+                    holdCtx.fillStyle = 'rgba(255,255,255,0.2)';
+                    holdCtx.fillRect(ox + c * ns + 1, oy + r * ns + 1, ns - 2, 2);
+                }
+            }
+        }
+    }
+
     // === Title Screen ===
     function drawTitleScreen() {
         const w = canvas.width;
@@ -1059,6 +1132,8 @@
         animatingRows = [];
         animTimer = 0;
         pieceBag = [];
+        holdPiece = null;
+        holdUsed = false;
         goldCols = [];
         goldSpawnCounter = 0;
         nextIsGold = false;
@@ -1088,6 +1163,7 @@
         if (e.key === 'ArrowDown') { moveDown(); lastDrop = 0; }
         if (e.key === 'ArrowUp') rotate();
         if (e.key === ' ') hardDrop();
+        if (e.key === 'c' || e.key === 'C' || e.key === 'Shift') holdCurrentPiece();
         if (e.key === 'r' || e.key === 'R') resetGame();
         e.preventDefault();
     });
@@ -1098,6 +1174,7 @@
     const btnDown = document.getElementById('btnDown');
     const btnRotate = document.getElementById('btnRotate');
     const btnDrop = document.getElementById('btnDrop');
+    const btnHold = document.getElementById('btnHold');
 
     function addTouch(btn, action, repeat) {
         let interval = null;
@@ -1129,6 +1206,7 @@
     addTouch(btnDown, () => { moveDown(); lastDrop = 0; }, true);
     addTouch(btnRotate, rotate, false);
     addTouch(btnDrop, hardDrop, false);
+    addTouch(btnHold, holdCurrentPiece, false);
 
     // Canvas tap to start / restart
     canvas.addEventListener('click', () => {
