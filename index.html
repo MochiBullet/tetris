@@ -121,6 +121,17 @@
         .ctrl-btn.drop-btn { color: #f44; font-size: 22px; letter-spacing: 1px; }
         .ctrl-btn.down-btn { color: #ff0; }
         .ctrl-btn.hold-btn { color: #0ff; font-size: 14px; letter-spacing: 1px; }
+        .ctrl-stack {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+        .ctrl-stack .ctrl-btn {
+            height: 32px;
+            font-size: 16px;
+        }
+        .ctrl-stack .drop-btn { font-size: 14px; }
+        .ctrl-stack .rotate-btn { font-size: 18px; }
         .hold-area { text-align: center; }
 
         /* Show controls on touch devices */
@@ -207,8 +218,10 @@
             <button class="ctrl-btn" id="btnLeft">◀</button>
             <button class="ctrl-btn" id="btnRight">▶</button>
             <button class="ctrl-btn down-btn" id="btnDown">▼</button>
-            <button class="ctrl-btn drop-btn" id="btnDrop">DROP</button>
-            <button class="ctrl-btn rotate-btn" id="btnRotate">↻</button>
+            <div class="ctrl-stack">
+                <button class="ctrl-btn drop-btn" id="btnDrop">DROP</button>
+                <button class="ctrl-btn rotate-btn" id="btnRotate">↻</button>
+            </div>
         </div>
     </div>
 
