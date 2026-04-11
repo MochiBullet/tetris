@@ -120,18 +120,14 @@
         .ctrl-btn.rotate-btn { color: #0f0; font-size: 24px; }
         .ctrl-btn.drop-btn { color: #f44; font-size: 22px; letter-spacing: 1px; }
         .ctrl-btn.down-btn { color: #ff0; }
-        .ctrl-btn.hold-btn { color: #0ff; font-size: 14px; letter-spacing: 1px; }
-        .ctrl-stack {
-            display: flex;
-            flex-direction: column;
-            flex: 1;
+        .ctrl-btn.hold-btn { color: #0ff; font-size: 16px; letter-spacing: 2px; height: 50px; }
+        .gesture-hint {
+            text-align: center;
+            font-size: 10px;
+            color: #444;
+            padding: 4px 8px;
+            padding-bottom: max(4px, env(safe-area-inset-bottom));
         }
-        .ctrl-stack .ctrl-btn {
-            height: 32px;
-            font-size: 16px;
-        }
-        .ctrl-stack .drop-btn { font-size: 14px; }
-        .ctrl-stack .rotate-btn { font-size: 18px; }
         .hold-area { text-align: center; }
 
         /* Show controls on touch devices */
@@ -215,13 +211,9 @@
     <div id="controls">
         <div class="ctrl-row">
             <button class="ctrl-btn hold-btn" id="btnHold">HOLD</button>
-            <button class="ctrl-btn" id="btnLeft">◀</button>
-            <button class="ctrl-btn" id="btnRight">▶</button>
-            <button class="ctrl-btn down-btn" id="btnDown">▼</button>
-            <div class="ctrl-stack">
-                <button class="ctrl-btn drop-btn" id="btnDrop">DROP</button>
-                <button class="ctrl-btn rotate-btn" id="btnRotate">↻</button>
-            </div>
+        </div>
+        <div class="gesture-hint" id="gestureHint">
+            ← → フリック移動 ／ ↓ フリックでDROP ／ タップで回転
         </div>
     </div>
 
@@ -1181,68 +1173,68 @@
         e.preventDefault();
     });
 
-    // === Touch Controls ===
-    const btnLeft = document.getElementById('btnLeft');
-    const btnRight = document.getElementById('btnRight');
-    const btnDown = document.getElementById('btnDown');
-    const btnRotate = document.getElementById('btnRotate');
-    const btnDrop = document.getElementById('btnDrop');
+    // === Touch Controls: Gesture-based ===
     const btnHold = document.getElementById('btnHold');
 
-    function addTouch(btn, action, repeat) {
-        let interval = null;
-        const start = (e) => {
-            e.preventDefault();
-            if (!gameStarted) { startGame(); return; }
-            if (gameOver) { resetGame(); return; }
-            btn.classList.add('active');
-            action();
-            if (repeat) {
-                interval = setInterval(action, 100);
-            }
-        };
-        const end = (e) => {
-            if (e) e.preventDefault();
-            btn.classList.remove('active');
-            if (interval) { clearInterval(interval); interval = null; }
-        };
-        btn.addEventListener('touchstart', start, { passive: false });
-        btn.addEventListener('touchend', end, { passive: false });
-        btn.addEventListener('touchcancel', end);
-        btn.addEventListener('mousedown', start);
-        btn.addEventListener('mouseup', end);
-        btn.addEventListener('mouseleave', end);
-    }
-
-    addTouch(btnLeft, moveLeft, true);
-    addTouch(btnRight, moveRight, true);
-    addTouch(btnDown, () => { moveDown(); lastDrop = 0; }, true);
-    addTouch(btnRotate, rotate, false);
-    addTouch(btnDrop, hardDrop, false);
-    addTouch(btnHold, holdCurrentPiece, false);
-
-    // Canvas tap to start / restart
-    canvas.addEventListener('click', () => {
-        if (!gameStarted) startGame();
-        else if (gameOver) resetGame();
-    });
-    canvas.addEventListener('touchstart', (e) => {
-        if (!gameStarted) { e.preventDefault(); startGame(); }
-        else if (gameOver) { e.preventDefault(); resetGame(); }
+    // HOLD button
+    btnHold.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (!gameStarted) { startGame(); return; }
+        if (gameOver) { resetGame(); return; }
+        holdCurrentPiece();
     }, { passive: false });
+    btnHold.addEventListener('click', () => {
+        if (!gameStarted) { startGame(); return; }
+        if (gameOver) { resetGame(); return; }
+        holdCurrentPiece();
+    });
 
-    // Swipe gestures on canvas
+    // Gesture on canvas: tap=rotate, flick left/right=move, flick down=drop
     let touchStartX = 0, touchStartY = 0, touchStartTime = 0;
+    let touchMoved = false;
+    let flickCount = 0; // track horizontal flicks during a single touch for multi-move
+
     canvas.addEventListener('touchstart', (e) => {
-        if (!gameStarted || gameOver) return;
+        e.preventDefault();
+        if (!gameStarted) { startGame(); return; }
+        if (gameOver) { resetGame(); return; }
         const t = e.touches[0];
         touchStartX = t.clientX;
         touchStartY = t.clientY;
         touchStartTime = Date.now();
+        touchMoved = false;
+        flickCount = 0;
+    }, { passive: false });
+
+    // Track movement during touch for continuous horizontal movement
+    let lastMoveX = 0;
+    canvas.addEventListener('touchmove', (e) => {
+        if (!gameStarted || gameOver || quizActive) return;
+        const t = e.touches[0];
+        const dx = t.clientX - touchStartX;
+        const dy = t.clientY - touchStartY;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+
+        // Horizontal movement: move piece per ~cellSize pixels dragged
+        const threshold = Math.max(25, cellSize * 0.8);
+        const moveSteps = Math.floor(dx / threshold);
+        if (moveSteps !== flickCount) {
+            const diff = moveSteps - flickCount;
+            if (diff > 0) { for (let i = 0; i < diff; i++) moveRight(); }
+            else { for (let i = 0; i < -diff; i++) moveLeft(); }
+            flickCount = moveSteps;
+            touchMoved = true;
+        }
+
+        // Soft drop: if dragging down significantly
+        if (dy > threshold * 1.5 && absDy > absDx) {
+            touchMoved = true;
+        }
     }, { passive: true });
 
     canvas.addEventListener('touchend', (e) => {
-        if (!gameStarted || gameOver) return;
+        if (!gameStarted || gameOver || quizActive) return;
         const t = e.changedTouches[0];
         const dx = t.clientX - touchStartX;
         const dy = t.clientY - touchStartY;
@@ -1250,14 +1242,20 @@
         const absDx = Math.abs(dx);
         const absDy = Math.abs(dy);
 
-        if (dt < 200 && absDx < 15 && absDy < 15) {
+        if (!touchMoved && dt < 250 && absDx < 20 && absDy < 20) {
             // Tap → rotate
             rotate();
-        } else if (absDy > absDx && dy > 50 && dt < 300) {
+        } else if (absDy > absDx && dy > 40 && dt < 400) {
             // Swipe down → hard drop
             hardDrop();
         }
     }, { passive: true });
+
+    // PC: click to start/restart
+    canvas.addEventListener('click', () => {
+        if (!gameStarted) startGame();
+        else if (gameOver) resetGame();
+    });
 
     // Prevent scroll
     document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
