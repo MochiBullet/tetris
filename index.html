@@ -118,7 +118,7 @@
             color: #fff;
         }
         .ctrl-btn.rotate-btn { color: #0f0; font-size: 24px; }
-        .ctrl-btn.drop-btn { color: #f44; font-size: 22px; letter-spacing: 1px; }
+        .ctrl-btn.drop-btn { color: #f44; font-size: 16px; letter-spacing: 2px; height: 50px; }
         .ctrl-btn.down-btn { color: #ff0; }
         .ctrl-btn.hold-btn { color: #0ff; font-size: 16px; letter-spacing: 2px; height: 50px; }
         .gesture-hint {
@@ -210,6 +210,7 @@
 
     <div id="controls">
         <div class="ctrl-row">
+            <button class="ctrl-btn drop-btn" id="btnDrop">DROP</button>
             <button class="ctrl-btn hold-btn" id="btnHold">HOLD</button>
         </div>
         <div class="gesture-hint" id="gestureHint">
@@ -1175,6 +1176,7 @@
 
     // === Touch Controls: Gesture-based ===
     const btnHold = document.getElementById('btnHold');
+    const btnDrop = document.getElementById('btnDrop');
 
     // HOLD button
     btnHold.addEventListener('touchstart', (e) => {
@@ -1187,6 +1189,19 @@
         if (!gameStarted) { startGame(); return; }
         if (gameOver) { resetGame(); return; }
         holdCurrentPiece();
+    });
+
+    // DROP button
+    btnDrop.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (!gameStarted) { startGame(); return; }
+        if (gameOver) { resetGame(); return; }
+        hardDrop();
+    }, { passive: false });
+    btnDrop.addEventListener('click', () => {
+        if (!gameStarted) { startGame(); return; }
+        if (gameOver) { resetGame(); return; }
+        hardDrop();
     });
 
     // Gesture on canvas: tap=rotate, flick left/right=move, flick down=drop
